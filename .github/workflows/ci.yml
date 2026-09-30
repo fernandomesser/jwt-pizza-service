@@ -6,6 +6,9 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build
@@ -15,25 +18,25 @@ jobs:
       mysql:
         image: mysql:8.0.29
         env:
-          MYSQL_ROOT_PASSWORD: tempdbpassword
+          MYSQL_ROOT_PASSWORD: root
           MYSQL_DATABASE: pizza
         ports:
-          - "3306:3306"
+          - 3306:3306
         options: >-
-          --health-cmd "mysqladmin ping -ptempdbpassword"
-          --health-interval 10s
-          --health-start-period 10s
-          --health-timeout 5s
-          --health-retries 10
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v4
         with:
-          node-version: "24.x"
+          node-version: 24
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
@@ -43,37 +46,92 @@ jobs:
 
       - name: Write config file
         run: |
-          echo "module.exports = {
+          cat > src/config.js <<EOF
+          module.exports = {
             jwtSecret: '${{ secrets.JWT_SECRET }}',
             db: {
               connection: {
                 host: '127.0.0.1',
                 user: 'root',
-                password: 'tempdbpassword',
+                password: 'root',
                 database: 'pizza',
-                connectTimeout: 60000,
+                connectTimeout: 60000
               },
-              listPerPage: 10,
+              listPerPage: 10
             },
             factory: {
               url: 'https://pizza-factory.cs329.click',
-              apiKey: '${{ secrets.FACTORY_API_KEY }}',
-            },
-          };" > src/config.js
+              apiKey: '${{ secrets.FACTORY_API_KEY }}'
+            }
+          };
+          EOF
 
       - name: Tests
         run: npm test
 
       - name: Set version
-        id: set_version
         run: |
-          version=$(date +'%Y%m%d.%H%M%S')
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          printf '{"version": "%s" }' "$version" > src/version.json
+          mkdir -p src
+          echo "{\"version\":\"$(date +%Y%m%d.%H%M%S)\"}" > src/version.json
 
-      - name: Update coverage
+      - name: Update Factory coverage
         run: |
-          coverage=$(jq '.total.lines.pct' coverage/coverage-summary.json)
-          color=$(echo "$coverage < 80" | bc | awk '{if ($1) print "red"; else print "green"}')
-          curl -s -X POST "https://pizza-factory.cs329.click/api/badge/${{ secrets.NET_ID }}/jwtpizzaservicecoverage?label=Coverage&value=$coverage%25&color=$color" \
+          coverage=$(jq -r '.total.lines.pct' coverage/coverage-summary.json)
+
+          color=$(awk -v coverage="$coverage" \
+            'BEGIN { if (coverage < 80) print "red"; else print "green" }')
+
+          curl -s -X POST \
+            "https://pizza-factory.cs329.click/api/badge/${{ secrets.NET_ID }}/jwtpizzaservicecoverage?label=Coverage&value=${coverage}%25&color=${color}" \
             -H "authorization: bearer ${{ secrets.FACTORY_API_KEY }}"
+
+      - name: Create coverage page
+        run: |
+          coverage=$(jq -r '.total.lines.pct' coverage/coverage-summary.json)
+
+          mkdir -p site
+
+          cat > site/coverage.svg <<EOF
+          <svg xmlns="http://www.w3.org/2000/svg" width="170" height="20">
+            <rect width="85" height="20" fill="#555"/>
+            <rect x="85" width="85" height="20" fill="#1a7f37"/>
+            <text x="42" y="14" fill="white" font-family="Arial" font-size="11" text-anchor="middle">Coverage</text>
+            <text x="127" y="14" fill="white" font-family="Arial" font-size="11" text-anchor="middle">${coverage}%</text>
+          </svg>
+          EOF
+
+          cat > site/index.html <<EOF
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>JWT Pizza Coverage</title>
+            </head>
+            <body>
+              <h1>JWT Pizza Service Coverage: ${coverage}%</h1>
+              <img src="coverage.svg" alt="Coverage badge">
+            </body>
+          </html>
+          EOF
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions:
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

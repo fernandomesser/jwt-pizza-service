@@ -6,9 +6,6 @@ on:
       - main
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 jobs:
   build:
     name: Build
@@ -71,67 +68,14 @@ jobs:
 
       - name: Set version
         run: |
-          mkdir -p src
           echo "{\"version\":\"$(date +%Y%m%d.%H%M%S)\"}" > src/version.json
 
-      - name: Update Factory coverage
+      - name: Update coverage
         run: |
-          coverage=$(jq -r '.total.lines.pct' coverage/coverage-summary.json)
+          coverage=$(jq '.total.lines.pct' coverage/coverage-summary.json)
 
-          color=$(awk -v coverage="$coverage" \
-            'BEGIN { if (coverage < 80) print "red"; else print "green" }')
+          color=$(echo "$coverage < 80" | bc | awk '{if ($1) print "red"; else print "green"}')
 
           curl -s -X POST \
-            "https://pizza-factory.cs329.click/api/badge/${{ secrets.NET_ID }}/jwtpizzaservicecoverage?label=Coverage&value=${coverage}%25&color=${color}" \
+            "https://pizza-factory.cs329.click/api/badge/${{ secrets.NET_ID }}/jwtpizzaservicecoverage?label=Coverage&value=$coverage%25&color=$color" \
             -H "authorization: bearer ${{ secrets.FACTORY_API_KEY }}"
-
-      - name: Create coverage page
-        run: |
-          coverage=$(jq -r '.total.lines.pct' coverage/coverage-summary.json)
-
-          mkdir -p site
-
-          cat > site/coverage.svg <<EOF
-          <svg xmlns="http://www.w3.org/2000/svg" width="170" height="20">
-            <rect width="85" height="20" fill="#555"/>
-            <rect x="85" width="85" height="20" fill="#1a7f37"/>
-            <text x="42" y="14" fill="white" font-family="Arial" font-size="11" text-anchor="middle">Coverage</text>
-            <text x="127" y="14" fill="white" font-family="Arial" font-size="11" text-anchor="middle">${coverage}%</text>
-          </svg>
-          EOF
-
-          cat > site/index.html <<EOF
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <title>JWT Pizza Coverage</title>
-            </head>
-            <body>
-              <h1>JWT Pizza Service Coverage: ${coverage}%</h1>
-              <img src="coverage.svg" alt="Coverage badge">
-            </body>
-          </html>
-          EOF
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: site/
-
-  deploy:
-    name: Deploy
-    needs: build
-    runs-on: ubuntu-latest
-
-    permissions:
-      pages: write
-      id-token: write
-
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4

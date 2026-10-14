@@ -99,6 +99,43 @@ class DB {
     }
   }
 
+  async listUsers(page = 1, limit = 10, nameFilter = '*') {
+    const currentPage = Math.max(1, Number.parseInt(page, 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 10));
+    const offset = (currentPage - 1) * pageSize;
+    const pattern = `%${String(nameFilter || '*').replaceAll('*', '%')}%`;
+    const connection = await this.getConnection();
+    try {
+      const users = await this.query(connection, 'SELECT id, name, email FROM user WHERE name LIKE ? ORDER BY name, id LIMIT ?, ?', [pattern, offset, pageSize + 1]);
+      const more = users.length > pageSize;
+      if (more) users.pop();
+
+      for (const user of users) {
+        const rows = await this.query(connection, 'SELECT role, objectId FROM userRole WHERE userId=?', [user.id]);
+        user.roles = rows.map((row) => ({ role: row.role, objectId: row.objectId || undefined }));
+      }
+      return { users, more };
+    } finally {
+      connection.end();
+    }
+  }
+
+  async deleteUser(userId) {
+    const connection = await this.getConnection();
+    try {
+      await connection.beginTransaction();
+      await this.query(connection, 'DELETE FROM auth WHERE userId=?', [userId]);
+      await this.query(connection, 'DELETE FROM userRole WHERE userId=?', [userId]);
+      await this.query(connection, 'DELETE FROM user WHERE id=?', [userId]);
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.end();
+    }
+  }
+
   async loginUser(userId, token) {
     token = this.getTokenSignature(token);
     const connection = await this.getConnection();

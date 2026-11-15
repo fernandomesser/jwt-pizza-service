@@ -1,5 +1,7 @@
 {
   "collectCoverage": true,
+  "collectCoverageFrom": ["src/**/*.js", "!src/**/test/**"],
+  "testPathIgnorePatterns": ["<rootDir>/dist/"],
   "coverageReporters": ["json-summary", "text"],
   "coverageThreshold": {
     "global": {

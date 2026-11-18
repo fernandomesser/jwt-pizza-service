@@ -67,6 +67,12 @@ jobs:
               endpointUrl: '${{ secrets.METRICS_ENDPOINT_URL }}',
               accountId: '${{ secrets.METRICS_ACCOUNT_ID }}',
               apiKey: '${{ secrets.METRICS_API_KEY }}'
+            },
+            logging: {
+              source: 'jwt-pizza-service',
+              endpointUrl: '${{ secrets.LOGGING_ENDPOINT_URL }}',
+              accountId: '${{ secrets.LOGGING_ACCOUNT_ID }}',
+              apiKey: '${{ secrets.LOGGING_API_KEY }}'
             }
           };
           EOF
@@ -153,3 +159,13 @@ jobs:
             --cluster jwt-pizza-service \
             --service jwt-pizza-service \
             --force-new-deployment
+
+      - name: Add deployment annotation to Grafana
+        env:
+          GRAFANA_ACCESS_TOKEN: ${{ secrets.GRAFANA_ACCESS_TOKEN }}
+        run: |
+          curl --fail-with-body -sS -X POST \
+            "https://mightypecan1285.grafana.net/api/annotations" \
+            -H "Authorization: Bearer ${GRAFANA_ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"dashboardUID\":\"fe884m6\",\"panelId\":14,\"tags\":[\"backend\",\"production\"],\"text\":\"Version ${version} deployed\"}"

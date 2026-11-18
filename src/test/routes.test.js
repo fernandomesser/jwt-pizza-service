@@ -6,6 +6,11 @@ jest.mock("../metrics", () => ({
   recordAuthAttempt: jest.fn(),
   recordPizzaPurchase: jest.fn(),
 }));
+jest.mock("../logger", () => ({
+  httpLogger: (req, res, next) => next(),
+  logException: jest.fn(),
+  factoryRequest: jest.fn((url, options) => fetch(url, options)),
+}));
 jest.mock("../database/database", () => ({
   Role: { Diner: "diner", Franchisee: "franchisee", Admin: "admin" },
   DB: {

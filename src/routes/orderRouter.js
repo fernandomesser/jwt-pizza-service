@@ -4,6 +4,7 @@ const { Role, DB } = require('../database/database.js');
 const { authRouter } = require('./authRouter.js');
 const { asyncHandler, StatusCodeError } = require('../endpointHelper.js');
 const metrics = require('../metrics.js');
+const logger = require('../logger.js');
 
 const orderRouter = express.Router();
 
@@ -83,21 +84,40 @@ orderRouter.post(
     const startedAt = Date.now();
 
     try {
-      const response = await fetch(`${config.factory.url}/api/order`, {
+      const factoryUrl = `${config.factory.url}/api/order`;
+
+      const factoryRequestBody = {
+        diner: {
+          id: req.user.id,
+          name: req.user.name,
+          email: req.user.email,
+        },
+        order,
+      };
+
+      const factoryLogBody = {
+        diner: {
+          id: req.user.id,
+          name: '[REDACTED]',
+          email: '[REDACTED]',
+        },
+        order,
+      };
+
+      const factoryOptions = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           authorization: `Bearer ${config.factory.apiKey}`,
         },
-        body: JSON.stringify({
-          diner: {
-            id: req.user.id,
-            name: req.user.name,
-            email: req.user.email,
-          },
-          order,
-        }),
-      });
+        body: JSON.stringify(factoryRequestBody),
+      };
+
+      const response = await logger.factoryRequest(
+        factoryUrl,
+        factoryOptions,
+        factoryLogBody
+      );
 
       const latencyMs = Date.now() - startedAt;
       const result = await response.json();
